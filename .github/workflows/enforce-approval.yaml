@@ -19,23 +19,33 @@ jobs:
               pull_number: context.payload.pull_request.number
             });
 
-            const teamA = "pull_request_teamb"; // Replace with actual GitHub team slug
-            const teamB = "testing_pull_request"; // Replace with actual GitHub team slug
+            const teamA = "pull_request_teamb"; // Match with actual GitHub team slug
+            const teamB = "testing_pull_request"; // Match with actual GitHub team slug
             let teamAApproved = false;
             let teamBApproved = false;
 
             for (const review of reviews) {
               if (review.state === "APPROVED") {
+                console.log(`Checking approvals for: ${review.user.login}`);
+
                 const { data: userTeams } = await github.rest.teams.listForUser({
                   username: review.user.login,
                   org: context.repo.owner
                 });
 
-                if (userTeams.some(team => team.slug === teamA)) teamAApproved = true;
-                if (userTeams.some(team => team.slug === teamB)) teamBApproved = true;
+                console.log(`User ${review.user.login} is in teams: ${JSON.stringify(userTeams.map(t => t.slug), null, 2)}`);
+
+                if (userTeams.some(team => team.slug === teamA)) {
+                  console.log(`✅ ${review.user.login} is in Team A (${teamA}) and approved.`);
+                  teamAApproved = true;
+                }
+                if (userTeams.some(team => team.slug === teamB)) {
+                  console.log(`✅ ${review.user.login} is in Team B (${teamB}) and approved.`);
+                  teamBApproved = true;
+                }
               }
             }
 
             if (!teamAApproved || !teamBApproved) {
-              core.setFailed("Both Team A and Team B must approve this PR before merging.");
+              core.setFailed("❌ Both Team A and Team B must approve this PR before merging.");
             }
