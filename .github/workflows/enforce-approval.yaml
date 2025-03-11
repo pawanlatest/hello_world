@@ -1,67 +1,41 @@
-name: Enforce Team-Based Approvals
+name: Enforce PR Approvals
 
 on:
   pull_request:
-    types: [review_requested, submitted]
+    types: [review_requested, review_submitted]
 
 jobs:
   check-approvals:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-      repository-projects: read
-
     steps:
-      - name: Check Approvals
+      - name: Check PR Approvals
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.ORG_ACCESS_TOKEN }}
           script: |
-            const prNumber = context.payload.pull_request.number;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            // Fetch reviews
             const { data: reviews } = await github.rest.pulls.listReviews({
-              owner,
-              repo,
-              pull_number: prNumber
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
             });
 
-            const team1 = "pull_request_teamb";  // Replace with actual GitHub Team Slug
-            const team2 = "testing_pull_request";  // Replace with actual GitHub Team Slug
-
-            let team1Approvers = new Set();
-            let team2Approvers = new Set();
+            const teamA = "pull_request_teamb"; // Replace with actual GitHub team slug
+            const teamB = "testing_pull_request"; // Replace with actual GitHub team slug
+            let teamAApproved = false;
+            let teamBApproved = false;
 
             for (const review of reviews) {
               if (review.state === "APPROVED") {
-                const username = review.user.login;
+                const { data: userTeams } = await github.rest.teams.listForUser({
+                  username: review.user.login,
+                  org: context.repo.owner
+                });
 
-                // Get team membership
-                try {
-                  const { data: teams } = await github.rest.orgs.listTeams({
-                    org: owner
-                  });
-
-                  for (const team of teams) {
-                    const { data: members } = await github.rest.teams.listMembersInOrg({
-                      org: owner,
-                      team_slug: team.slug
-                    });
-
-                    if (members.some(member => member.login === username)) {
-                      if (team.slug === team1) team1Approvers.add(username);
-                      if (team.slug === team2) team2Approvers.add(username);
-                    }
-                  }
-                } catch (error) {
-                  console.log(`Error fetching team membership: ${error.message}`);
-                }
+                if (userTeams.some(team => team.slug === teamA)) teamAApproved = true;
+                if (userTeams.some(team => team.slug === teamB)) teamBApproved = true;
               }
             }
 
-            // Enforce rule: PR must have at least 1 approval from each team
-            if (team1Approvers.size === 0 || team2Approvers.size === 0) {
-              core.setFailed("PR must have at least one approval from each team!");
+            if (!teamAApproved || !teamBApproved) {
+              core.setFailed("Both Team A and Team B must approve this PR before merging.");
             }
